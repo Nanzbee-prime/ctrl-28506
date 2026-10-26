@@ -61,6 +61,13 @@ td select{padding:5px 8px;min-width:120px}
 .toast.bad{border-color:var(--bad)}
 .row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .row input{max-width:420px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:8}
+.mbox{background:var(--card);border:1px solid var(--line);border-radius:12px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column}
+.mbox header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.mbox header b{flex:1}
+.mbox .body{overflow:auto}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 12px;margin-bottom:16px}
+.form .full{grid-column:1/-1}
 @media(max-width:640px){#app{flex-direction:column}nav{width:auto;height:auto;position:static;flex-direction:row;flex-wrap:wrap;padding:8px}nav h2{display:none}nav .sp{display:none}main{padding:12px}}
 </style>
 </head>
@@ -102,6 +109,7 @@ td select{padding:5px 8px;min-width:120px}
     <button data-p="dash" class="on">Dashboard</button>
     <button data-p="dev">Devices</button>
     <button data-p="dom">Domains</button>
+    <button data-p="mac">Add by MAC</button>
     <div class="sp"></div>
     <button id="bOut">Sign out</button>
   </nav>
@@ -114,6 +122,7 @@ td select{padding:5px 8px;min-width:120px}
     <section id="pDash"></section>
     <section id="pDev" class="hidden"></section>
     <section id="pDom" class="hidden"></section>
+    <section id="pMac" class="hidden"></section>
   </main>
 </div>
 
@@ -129,7 +138,7 @@ var LS={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}
 
 var cfg={url:LS.get("np_url"),key:LS.get("np_key")};
 var sess=null; try{sess=JSON.parse(LS.get("np_sess")||"null")}catch(e){}
-var st={devices:[],domains:[],cm:{},tab:"clients",page:"dash",q:"",onlyOn:false,hide:LS.get("np_hide")==="1",timer:null};
+var st={devices:[],domains:[],cm:{},pr:{},pend:[],tab:"clients",page:"dash",q:"",onlyOn:false,hide:LS.get("np_hide")==="1",timer:null};
 
 function h(tag,attrs,kids){
   var e=document.createElement(tag);
@@ -180,13 +189,26 @@ function load(){
   return Promise.all([
     api("/rest/v1/panel_devices?select=*"),
     api("/rest/v1/domains?select=*&order=id"),
-    api("/rest/v1/customers?select=username,is_client")
+    api("/rest/v1/customers?select=username,is_client"),
+    api("/rest/v1/panel_presence?select=*").catch(function(){return []}),
+    st.page==="mac"?api("/rest/v1/rpc/list_pending",{method:"POST",body:{}}).catch(function(){return null}):Promise.resolve(null)
   ]).then(function(r){
+    st.pr={};(r[3]||[]).forEach(function(x){st.pr[x.device_code]=x});
+    if(r[4])st.pend=r[4];
     st.devices=r[0]||[];st.domains=r[1]||[];
     st.cm={};(r[2]||[]).forEach(function(c){st.cm[c.username]=!!c.is_client});
     var d=new Date();$("stamp").textContent="Updated "+d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     render();
   }).catch(function(e){toast(e.message,true)});
+}
+function isOn(d){var x=st.pr[d.mac];return x?!!x.online:!!d.online}
+function lastSeen(d){var x=st.pr[d.mac];return x?x.last_seen:d.last_seen_kw}
+function kwTime(iso){
+  try{return new Date(iso).toLocaleString("en-GB",{timeZone:"Asia/Kuwait",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:true})}catch(e){return iso}
+}
+function dur(a,b){
+  var m=Math.max(0,Math.round((new Date(b)-new Date(a))/60000));
+  if(m<1)return "<1m";if(m<60)return m+"m";return Math.floor(m/60)+"h "+(m%60)+"m";
 }
 function isClient(d){return !!st.cm[d.username]}
 function clients(){return st.devices.filter(isClient)}
@@ -203,17 +225,20 @@ function ago(s){
 function mask(u){return st.hide?"••••••••••":u}
 
 /* ---------- render ---------- */
-function render(){
+function render(force){
+  var ae=document.activeElement;
+  if(!force&&ae&&ae.tagName==="SELECT"&&ae.closest&&ae.closest("main"))return;
+  $("pMac").classList.toggle("hidden",st.page!=="mac");
   $("pDash").classList.toggle("hidden",st.page!=="dash");
   $("pDev").classList.toggle("hidden",st.page!=="dev");
   $("pDom").classList.toggle("hidden",st.page!=="dom");
-  $("title").textContent={dash:"Dashboard",dev:"Devices",dom:"Domains"}[st.page];
+  $("title").textContent={dash:"Dashboard",dev:"Devices",dom:"Domains",mac:"Add by MAC"}[st.page];
   Array.prototype.forEach.call(document.querySelectorAll("nav button[data-p]"),function(b){b.classList.toggle("on",b.dataset.p===st.page)});
-  if(st.page==="dash")rDash();else if(st.page==="dev")rDev();else rDom();
+  if(st.page==="dash")rDash();else if(st.page==="dev")rDev();else if(st.page==="dom")rDom();else rMac();
 }
 function rDash(){
   var p=$("pDash");clear(p);
-  var cl=clients(),on=cl.filter(function(d){return d.online}).length,L=latest();
+  var cl=clients(),on=cl.filter(isOn).length,L=latest();
   var old=cl.filter(function(d){return (d.app_code||0)<L}).length;
   var nw=st.devices.length-cl.length;
   function c(n,l){return h("div",{class:"card"},[h("div",{class:"n",text:String(n)}),h("div",{class:"l",text:l})])}
@@ -226,7 +251,7 @@ function rDev(){
   var q=h("input",{id:"qBox",type:"search",placeholder:"Search username or MAC",value:st.q,oninput:function(e){st.q=e.target.value;rows()}});
   var cb=h("input",{type:"checkbox",onchange:function(e){st.onlyOn=e.target.checked;rows()}});cb.checked=st.onlyOn;
   var nNew=st.devices.length-clients().length;
-  function tabBtn(id,label){return h("button",{class:"btn"+(st.tab===id?"":" ghost"),text:label,onclick:function(){st.tab=id;rDev()}})}
+  function tabBtn(id,label){return h("button",{class:"btn"+(st.tab===id?"":" ghost"),text:label,onclick:function(){st.tab=id;render(true)}})}
   p.appendChild(h("div",{class:"tools"},[tabBtn("clients","Clients ("+clients().length+")"),tabBtn("new","New ("+nNew+")")]));
   p.appendChild(h("div",{class:"tools"},[q,h("label",{class:"chk",style:"margin:0"},[cb,"Online only"])]));
   var tb=h("tbody");
@@ -237,7 +262,7 @@ function rDev(){
     clear(tb);
     var s=st.q.trim().toLowerCase();
     var list=st.devices.filter(function(d){
-      if(st.onlyOn&&!d.online)return false;
+      if(st.onlyOn&&!isOn(d))return false;
       if(isClient(d)!==(st.tab==="clients"))return false;
       return !s||(d.username||"").toLowerCase().indexOf(s)>=0||(d.mac||"").toLowerCase().indexOf(s)>=0;
     });
@@ -253,9 +278,11 @@ function rDev(){
         h("td",{class:"mono",text:d.mac||"-"}),
         h("td",{text:d.country_name||d.country||"-"}),
         h("td",{text:d.app_version||"-"}),
-        h("td",null,[h("span",{class:"dot"+(d.online?" on":"")}),d.online?"Online":ago(d.last_seen_kw)]),
+        h("td",null,[h("span",{class:"dot"+(isOn(d)?" on":"")}),isOn(d)?"Online":ago(lastSeen(d))]),
         h("td",null,[sel]),
         h("td",null,[
+          h("button",{class:"btn ghost",text:"Log",onclick:function(){showLog(d)}}),
+          document.createTextNode(" "),
           h("button",{class:"btn",text:st.tab==="new"?"Make client":"Move to New",onclick:function(){setClient(d,st.tab==="new")}}),
           document.createTextNode(" "),
           h("button",{class:"btn ghost",text:"Delete",onclick:function(){delClient(d)}})
@@ -265,6 +292,79 @@ function rDev(){
   }
   rows();
   if(keep){var qb=$("qBox");qb.focus();qb.setSelectionRange(qb.value.length,qb.value.length)}
+}
+function showLog(d){
+  var body=h("div",{class:"body"},[h("div",{class:"empty",text:"Loading..."})]);
+  var box=h("div",{class:"mbox"},[
+    h("header",null,[h("b",{text:(d.username||"")+"  ·  "+(d.mac||"")}),h("button",{class:"btn ghost",text:"Close",onclick:function(){document.body.removeChild(ov)}})]),body]);
+  var ov=h("div",{class:"modal",onclick:function(e){if(e.target===ov)document.body.removeChild(ov)}},[box]);
+  document.body.appendChild(ov);
+  api("/rest/v1/device_sessions?device_code=eq."+encodeURIComponent(d.mac)+"&order=started_at.desc&limit=60").then(function(rows){
+    clear(body);
+    if(!rows||!rows.length){body.appendChild(h("div",{class:"empty",text:"No sessions recorded yet. The log starts when the client updates to app 2.1."}));return}
+    var tb=h("tbody");
+    rows.forEach(function(r){
+      var live=!r.ended_at&&(Date.now()-new Date(r.last_seen).getTime())<90000;
+      var end=r.ended_at||r.last_seen;
+      tb.appendChild(h("tr",null,[
+        h("td",{text:kwTime(r.started_at)}),
+        h("td",null,live?[h("span",{class:"dot on"}),"Online now"]:[kwTime(end)]),
+        h("td",{text:dur(r.started_at,end)})]));
+    });
+    body.appendChild(h("table",null,[h("thead",null,[h("tr",null,["Opened","Closed","Duration"].map(function(x){return h("th",{text:x})}))]),tb]));
+    body.appendChild(h("div",{class:"empty",style:"font-size:12px",text:"Times are Kuwait time. Last 90 days."}));
+  }).catch(function(e){clear(body);body.appendChild(h("div",{class:"empty",text:e.message}))});
+}
+function normMac(v){
+  var x=(v||"").replace(/[^0-9a-fA-F]/g,"").toUpperCase();
+  if(x.length!==12)return null;
+  return x.match(/.{2}/g).join(":");
+}
+function rMac(){
+  var p=$("pMac");
+  if(!p.firstChild){
+    var sel=h("select",{id:"mDom"});
+    var f=h("form",{id:"mForm",class:"card",onsubmit:function(e){e.preventDefault();addMac()}},[
+      h("div",{class:"form"},[
+        h("div",null,[h("label",{text:"MAC address"}),h("input",{id:"mMac",placeholder:"8A:FB:03:5F:CB:9D",autocomplete:"off"})]),
+        h("div",null,[h("label",{text:"Device Key (6 digits)"}),h("input",{id:"mKey",placeholder:"123456",inputmode:"numeric",maxlength:"6",autocomplete:"off"})]),
+        h("div",null,[h("label",{text:"Username"}),h("input",{id:"mUser",autocomplete:"off"})]),
+        h("div",null,[h("label",{text:"Password"}),h("input",{id:"mPass",autocomplete:"off"})]),
+        h("div",null,[h("label",{text:"Domain"}),sel])]),
+      h("button",{class:"btn",type:"submit",id:"mBtn",text:"Add"}),
+      h("div",{style:"color:var(--mute);font-size:12px;margin-top:10px",text:"When the client opens the app on the login screen, it signs in by itself within ~10 seconds. The password is deleted from the database as soon as it is delivered (or after 24 hours)."})]);
+    p.appendChild(f);
+    p.appendChild(h("h3",{style:"margin:18px 0 8px;font-size:14px",text:"Waiting to be delivered"}));
+    p.appendChild(h("div",{id:"mList"}));
+  }
+  var sel2=$("mDom"),cur=sel2.value;clear(sel2);
+  st.domains.filter(function(x){return x.active}).forEach(function(x){
+    var o=h("option",{value:String(x.id),text:"#"+x.id+(x.is_default?" (default)":"")});
+    if(String(x.id)===cur||(!cur&&x.is_default))o.selected=true;sel2.appendChild(o);
+  });
+  var l=$("mList");clear(l);
+  if(!st.pend.length){l.appendChild(h("div",{class:"empty",text:"Nothing waiting"}));return}
+  var tb=h("tbody");
+  st.pend.forEach(function(x){
+    tb.appendChild(h("tr",null,[h("td",{class:"mono",text:x.device_code}),h("td",{text:x.username}),
+      h("td",{text:"#"+(x.domain_id==null?"-":x.domain_id)}),h("td",{text:kwTime(x.created_at)}),
+      h("td",null,[h("button",{class:"btn ghost",text:"Cancel",onclick:function(){cancelMac(x.device_code)}})])]));
+  });
+  l.appendChild(h("div",{class:"tw"},[h("table",null,[h("thead",null,[h("tr",null,["MAC","Username","Domain","Added",""].map(function(t){return h("th",{text:t})}))]),tb])]));
+}
+function addMac(){
+  var mac=normMac($("mMac").value),key=$("mKey").value.trim(),u=$("mUser").value.trim(),pw=$("mPass").value,dom=parseInt($("mDom").value,10);
+  if(!mac){toast("MAC must have 12 hex characters",true);return}
+  if(!/^\d{6}$/.test(key)){toast("Device Key must be 6 digits",true);return}
+  if(!u||!pw){toast("Username and password are required",true);return}
+  if(isNaN(dom)){toast("Choose a domain",true);return}
+  $("mBtn").disabled=true;
+  api("/rest/v1/rpc/add_mac_user",{method:"POST",body:{p_mac:mac,p_key:key,p_username:u,p_password:pw,p_domain_id:dom}})
+   .then(function(){toast("Saved. Waiting for the client to open the app.");$("mMac").value="";$("mKey").value="";$("mUser").value="";$("mPass").value="";return load()})
+   .catch(function(e){toast(e.message,true)}).then(function(){$("mBtn").disabled=false});
+}
+function cancelMac(mac){
+  api("/rest/v1/rpc/cancel_pending",{method:"POST",body:{p_mac:mac}}).then(function(){toast("Cancelled");return load()}).catch(function(e){toast(e.message,true)});
 }
 function setClient(d,v){
   api("/rest/v1/customers?username=eq."+encodeURIComponent(d.username),{method:"PATCH",body:{is_client:v},prefer:"return=representation"})
@@ -340,9 +440,9 @@ function start(){
   show("app");load();
   clearInterval(st.timer);
   st.timer=setInterval(function(){
-    if(document.hidden||st.page==="dom"&&document.activeElement&&document.activeElement.id==="newUrl")return;
+    if(document.hidden)return;
     load();
-  },60000);
+  },10000);
 }
 function boot(){
   if(!cfg.url||!cfg.key){show("vSetup");return}
@@ -365,7 +465,7 @@ $("fLogin").addEventListener("submit",function(e){
 $("bOut").addEventListener("click",logout);
 $("bRef").addEventListener("click",load);
 Array.prototype.forEach.call(document.querySelectorAll("nav button[data-p]"),function(b){
-  b.addEventListener("click",function(){st.page=b.dataset.p;render()});
+  b.addEventListener("click",function(){st.page=b.dataset.p;render(true);if(st.page==="mac")load()});
 });
 boot();
 })();
