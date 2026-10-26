@@ -129,7 +129,7 @@ var LS={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}
 
 var cfg={url:LS.get("np_url"),key:LS.get("np_key")};
 var sess=null; try{sess=JSON.parse(LS.get("np_sess")||"null")}catch(e){}
-var st={devices:[],domains:[],page:"dash",q:"",onlyOn:false,hide:LS.get("np_hide")==="1",timer:null};
+var st={devices:[],domains:[],cm:{},tab:"clients",page:"dash",q:"",onlyOn:false,hide:LS.get("np_hide")==="1",timer:null};
 
 function h(tag,attrs,kids){
   var e=document.createElement(tag);
@@ -179,14 +179,18 @@ function logout(){sess=null;LS.del("np_sess");clearInterval(st.timer);show("vLog
 function load(){
   return Promise.all([
     api("/rest/v1/panel_devices?select=*"),
-    api("/rest/v1/domains?select=*&order=id")
+    api("/rest/v1/domains?select=*&order=id"),
+    api("/rest/v1/customers?select=username,is_client")
   ]).then(function(r){
     st.devices=r[0]||[];st.domains=r[1]||[];
+    st.cm={};(r[2]||[]).forEach(function(c){st.cm[c.username]=!!c.is_client});
     var d=new Date();$("stamp").textContent="Updated "+d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
     render();
   }).catch(function(e){toast(e.message,true)});
 }
-function latest(){return st.devices.reduce(function(m,d){return Math.max(m,d.app_code||0)},0)}
+function isClient(d){return !!st.cm[d.username]}
+function clients(){return st.devices.filter(isClient)}
+function latest(){return clients().reduce(function(m,d){return Math.max(m,d.app_code||0)},0)}
 function ago(s){
   if(!s)return "-";
   var t=/[zZ]|[+-]\d\d(:?\d\d)?$/.test(s)?s:s.replace(" ","T")+"+03:00";
@@ -209,10 +213,11 @@ function render(){
 }
 function rDash(){
   var p=$("pDash");clear(p);
-  var on=st.devices.filter(function(d){return d.online}).length,L=latest();
-  var old=st.devices.filter(function(d){return (d.app_code||0)<L}).length;
+  var cl=clients(),on=cl.filter(function(d){return d.online}).length,L=latest();
+  var old=cl.filter(function(d){return (d.app_code||0)<L}).length;
+  var nw=st.devices.length-cl.length;
   function c(n,l){return h("div",{class:"card"},[h("div",{class:"n",text:String(n)}),h("div",{class:"l",text:l})])}
-  p.appendChild(h("div",{class:"cards"},[c(on,"Online now"),c(st.devices.length,"Devices"),c(old,"Old version")]));
+  p.appendChild(h("div",{class:"cards"},[c(on,"Online now"),c(cl.length,"Clients"),c(old,"Old version"),c(nw,"New (not clients)")]));
 }
 function rDev(){
   var p=$("pDev");
@@ -220,16 +225,20 @@ function rDev(){
   clear(p);
   var q=h("input",{id:"qBox",type:"search",placeholder:"Search username or MAC",value:st.q,oninput:function(e){st.q=e.target.value;rows()}});
   var cb=h("input",{type:"checkbox",onchange:function(e){st.onlyOn=e.target.checked;rows()}});cb.checked=st.onlyOn;
+  var nNew=st.devices.length-clients().length;
+  function tabBtn(id,label){return h("button",{class:"btn"+(st.tab===id?"":" ghost"),text:label,onclick:function(){st.tab=id;rDev()}})}
+  p.appendChild(h("div",{class:"tools"},[tabBtn("clients","Clients ("+clients().length+")"),tabBtn("new","New ("+nNew+")")]));
   p.appendChild(h("div",{class:"tools"},[q,h("label",{class:"chk",style:"margin:0"},[cb,"Online only"])]));
   var tb=h("tbody");
   p.appendChild(h("div",{class:"tw"},[h("table",null,[
-    h("thead",null,[h("tr",null,["Username","MAC","Country","Version","Status","Domain"].map(function(x){return h("th",{text:x})}))]),tb])]));
+    h("thead",null,[h("tr",null,["Username","MAC","Country","Version","Status","Domain",""].map(function(x){return h("th",{text:x})}))]),tb])]));
   var empty=h("div",{class:"empty",text:"No devices"});p.appendChild(empty);
   function rows(){
     clear(tb);
     var s=st.q.trim().toLowerCase();
     var list=st.devices.filter(function(d){
       if(st.onlyOn&&!d.online)return false;
+      if(isClient(d)!==(st.tab==="clients"))return false;
       return !s||(d.username||"").toLowerCase().indexOf(s)>=0||(d.mac||"").toLowerCase().indexOf(s)>=0;
     });
     empty.classList.toggle("hidden",list.length>0);
@@ -245,12 +254,27 @@ function rDev(){
         h("td",{text:d.country_name||d.country||"-"}),
         h("td",{text:d.app_version||"-"}),
         h("td",null,[h("span",{class:"dot"+(d.online?" on":"")}),d.online?"Online":ago(d.last_seen_kw)]),
-        h("td",null,[sel])
+        h("td",null,[sel]),
+        h("td",null,[
+          st.tab==="new"?h("button",{class:"btn",text:"Make client",onclick:function(){makeClient(d)}}):null,
+          st.tab==="new"?document.createTextNode(" "):null,
+          h("button",{class:"btn ghost",text:"Delete",onclick:function(){delClient(d)}})
+        ])
       ]));
     });
   }
   rows();
   if(keep){var qb=$("qBox");qb.focus();qb.setSelectionRange(qb.value.length,qb.value.length)}
+}
+function makeClient(d){
+  api("/rest/v1/customers?username=eq."+encodeURIComponent(d.username),{method:"PATCH",body:{is_client:true},prefer:"return=representation"})
+   .then(function(r){if(!r||!r.length)throw new Error("Not saved");st.cm[d.username]=true;toast(d.username+" is now a client");render()})
+   .catch(function(e){toast(e.message,true)});
+}
+function delClient(d){
+  if(!confirm("Delete "+d.username+" and all of their devices from the panel?\n\nIf the app is opened again it will reappear under New."))return;
+  api("/rest/v1/rpc/delete_client",{method:"POST",body:{p_username:d.username}})
+   .then(function(){toast("Deleted "+d.username);return load()}).catch(function(e){toast(e.message,true)});
 }
 function setDomain(d,val,sel){
   var id=parseInt(val,10);
@@ -270,7 +294,7 @@ function rDom(){
     h("label",{class:"chk",style:"margin:0 0 0 auto"},[hide,"Hide links"])]));
   var tb=h("tbody");
   p.appendChild(h("div",{class:"tw"},[h("table",null,[
-    h("thead",null,[h("tr",null,["#","URL","Default","Active"].map(function(x){return h("th",{text:x})}))]),tb])]));
+    h("thead",null,[h("tr",null,["#","URL","Default","Active",""].map(function(x){return h("th",{text:x})}))]),tb])]));
   var count={};st.devices.forEach(function(d){count[d.domain_no]=(count[d.domain_no]||0)+1});
   if(!st.domains.length)p.appendChild(h("div",{class:"empty",text:"No domains"}));
   st.domains.forEach(function(x){
@@ -280,7 +304,8 @@ function rDom(){
       h("td",{text:String(x.id)}),
       h("td",{class:"mono",text:mask(x.url)+(count[x.id]?"  ("+count[x.id]+" devices)":"")}),
       h("td",null,[def]),
-      h("td",null,[h("label",{class:"sw"},[act,h("span")])])
+      h("td",null,[h("label",{class:"sw"},[act,h("span")])]),
+      h("td",null,[h("button",{class:"btn ghost",text:"Delete",onclick:function(){delDomain(x,count[x.id]||0)}})])
     ]));
   });
 }
@@ -297,6 +322,12 @@ function toggleActive(x,box){
   if(!v&&x.is_default){box.checked=true;toast("Set another default first",true);return}
   api("/rest/v1/domains?id=eq."+x.id,{method:"PATCH",body:{active:v}})
    .then(function(){x.active=v;toast(v?"Activated":"Deactivated")}).catch(function(e){box.checked=!v;toast(e.message,true)});
+}
+function delDomain(x,n){
+  if(x.is_default){toast("Set another default first",true);return}
+  if(!confirm("Delete domain #"+x.id+"?"+(n?"\n\n"+n+" device(s) use it and will switch to the default domain.":"")))return;
+  api("/rest/v1/rpc/delete_domain",{method:"POST",body:{p_id:x.id}})
+   .then(function(){toast("Domain deleted");return load()}).catch(function(e){toast(e.message,true)});
 }
 function setDefault(x){
   if(!x.active){toast("Activate this domain first",true);return}
