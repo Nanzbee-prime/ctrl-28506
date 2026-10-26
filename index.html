@@ -256,8 +256,8 @@ function rDev(){
         h("td",null,[h("span",{class:"dot"+(d.online?" on":"")}),d.online?"Online":ago(d.last_seen_kw)]),
         h("td",null,[sel]),
         h("td",null,[
-          st.tab==="new"?h("button",{class:"btn",text:"Make client",onclick:function(){makeClient(d)}}):null,
-          st.tab==="new"?document.createTextNode(" "):null,
+          h("button",{class:"btn",text:st.tab==="new"?"Make client":"Move to New",onclick:function(){setClient(d,st.tab==="new")}}),
+          document.createTextNode(" "),
           h("button",{class:"btn ghost",text:"Delete",onclick:function(){delClient(d)}})
         ])
       ]));
@@ -266,9 +266,9 @@ function rDev(){
   rows();
   if(keep){var qb=$("qBox");qb.focus();qb.setSelectionRange(qb.value.length,qb.value.length)}
 }
-function makeClient(d){
-  api("/rest/v1/customers?username=eq."+encodeURIComponent(d.username),{method:"PATCH",body:{is_client:true},prefer:"return=representation"})
-   .then(function(r){if(!r||!r.length)throw new Error("Not saved");st.cm[d.username]=true;toast(d.username+" is now a client");render()})
+function setClient(d,v){
+  api("/rest/v1/customers?username=eq."+encodeURIComponent(d.username),{method:"PATCH",body:{is_client:v},prefer:"return=representation"})
+   .then(function(r){if(!r||!r.length)throw new Error("Not saved");st.cm[d.username]=v;toast(d.username+(v?" is now a client":" moved to New"));render()})
    .catch(function(e){toast(e.message,true)});
 }
 function delClient(d){
