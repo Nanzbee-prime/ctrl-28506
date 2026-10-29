@@ -281,7 +281,7 @@ function rUpd(){
       h("div",{class:"form"},[
         h("div",null,[h("label",{text:"Latest version code (a number)"}),h("input",{id:"uCode",type:"number",min:"0",inputmode:"numeric",autocomplete:"off"})]),
         h("div",null,[h("label",{text:"Version name"}),h("input",{id:"uName",placeholder:"2.5",autocomplete:"off"})]),
-        h("div",{class:"full"},[h("label",{text:"Instructions shown to clients"}),h("input",{id:"uNote",placeholder:"Open Downloader and enter the code ...",autocomplete:"off"})])]),
+        h("div",{class:"full"},[h("label",{text:"Download code (shown in step 2 of the notice)"}),h("input",{id:"uNote",placeholder:"e.g. 123456",autocomplete:"off"})])]),
       h("button",{class:"btn",type:"submit",id:"uBtn",text:"Save"}),
       h("div",{id:"uHint",style:"color:var(--mute);font-size:12px;margin-top:10px"})]));
   }
