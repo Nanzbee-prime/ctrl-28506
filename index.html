@@ -310,8 +310,9 @@ function rDev(){
           document.createTextNode(" "),
           isOn(d)?h("button",{class:"btn ghost",text:"Kick",onclick:function(){kickDevice(d)}}):null,
           isOn(d)?document.createTextNode(" "):null,
-          h("button",{class:"btn",text:st.tab==="new"?"Make client":"Move to New",onclick:function(){setClient(d,st.tab==="new")}}),
-          document.createTextNode(" "),
+          // "Make client" بتبويب New بس (ما في زر Move to New بتبويب Clients)
+          st.tab==="new"?h("button",{class:"btn",text:"Make client",onclick:function(){setClient(d,true)}}):null,
+          st.tab==="new"?document.createTextNode(" "):null,
           h("button",{class:"btn ghost",text:"Delete",onclick:function(){delClient(d)}})
         ])
       ]));
