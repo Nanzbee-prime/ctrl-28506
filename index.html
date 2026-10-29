@@ -262,6 +262,12 @@ function flagEl(d){
   img.addEventListener("error",function(){if(img.parentNode)img.parentNode.replaceChild(document.createTextNode(name),img)});
   return img;
 }
+// شو عم يشاهد العميل هلق (بيظهر بس إذا أونلاين)
+function watchEl(d){
+  var x=st.pr[d.mac];
+  var w=(isOn(d)&&x&&x.watching)?String(x.watching):"";
+  return h("td",{title:w,style:"max-width:260px;overflow:hidden;text-overflow:ellipsis;color:"+(w?"var(--text)":"var(--mute)")},[w||"-"]);
+}
 function rDev(){
   var p=$("pDev");
   var keep=document.activeElement&&document.activeElement.id==="qBox";
@@ -274,7 +280,7 @@ function rDev(){
   p.appendChild(h("div",{class:"tools"},[q,h("label",{class:"chk",style:"margin:0"},[cb,"Online only"])]));
   var tb=h("tbody");
   p.appendChild(h("div",{class:"tw"},[h("table",null,[
-    h("thead",null,[h("tr",null,["Username","MAC","Country","Version","Status","Domain",""].map(function(x){return h("th",{text:x})}))]),tb])]));
+    h("thead",null,[h("tr",null,["Username","MAC","Country","Version","Status","Watching","Domain",""].map(function(x){return h("th",{text:x})}))]),tb])]));
   var empty=h("div",{class:"empty",text:"No devices"});p.appendChild(empty);
   function rows(){
     clear(tb);
@@ -297,6 +303,7 @@ function rDev(){
         h("td",null,[flagEl(d)]),
         h("td",{text:d.app_version||"-"}),
         h("td",null,[h("span",{class:"dot"+(isOn(d)?" on":"")}),isOn(d)?"Online":ago(lastSeen(d))]),
+        watchEl(d),
         h("td",null,[sel]),
         h("td",null,[
           h("button",{class:"btn ghost",text:"Log",onclick:function(){showLog(d)}}),
