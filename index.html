@@ -244,6 +244,24 @@ function rDash(){
   function c(n,l){return h("div",{class:"card"},[h("div",{class:"n",text:String(n)}),h("div",{class:"l",text:l})])}
   p.appendChild(h("div",{class:"cards"},[c(on,"Online now"),c(cl.length,"Clients"),c(old,"Old version"),c(nw,"New (not clients)")]));
 }
+/* ---------- country flag ---------- */
+var CC={"kuwait":"kw","saudi arabia":"sa","united arab emirates":"ae","qatar":"qa","bahrain":"bh","oman":"om","iraq":"iq","jordan":"jo","lebanon":"lb","syria":"sy","egypt":"eg","yemen":"ye","palestine":"ps","israel":"il","turkey":"tr","türkiye":"tr","iran":"ir","united states":"us","united kingdom":"gb","germany":"de","france":"fr","canada":"ca","australia":"au","india":"in","pakistan":"pk","bangladesh":"bd","sri lanka":"lk","nepal":"np","philippines":"ph","indonesia":"id","malaysia":"my","singapore":"sg","thailand":"th","china":"cn","japan":"jp","south korea":"kr","russia":"ru","ukraine":"ua","poland":"pl","romania":"ro","bulgaria":"bg","hungary":"hu","czechia":"cz","austria":"at","switzerland":"ch","italy":"it","spain":"es","portugal":"pt","netherlands":"nl","belgium":"be","luxembourg":"lu","ireland":"ie","denmark":"dk","sweden":"se","norway":"no","finland":"fi","greece":"gr","cyprus":"cy","morocco":"ma","algeria":"dz","tunisia":"tn","libya":"ly","sudan":"sd","south sudan":"ss","somalia":"so","ethiopia":"et","eritrea":"er","kenya":"ke","nigeria":"ng","south africa":"za","afghanistan":"af","uzbekistan":"uz","kazakhstan":"kz","azerbaijan":"az","georgia":"ge","armenia":"am","brazil":"br","mexico":"mx","argentina":"ar","hong kong":"hk","taiwan":"tw","vietnam":"vn","new zealand":"nz","mauritania":"mr","djibouti":"dj","comoros":"km"};
+function flagCode(d){
+  var c=(d.country||"").trim();
+  if(/^[A-Za-z]{2}$/.test(c))return c.toLowerCase();
+  var n=(d.country_name||d.country||"").trim().toLowerCase();
+  return CC[n]||null;
+}
+function flagEl(d){
+  var name=d.country_name||d.country||"";
+  if(!name)return document.createTextNode("-");
+  var code=flagCode(d);
+  if(!code)return document.createTextNode(name);
+  var img=h("img",{src:"https://flagcdn.com/w40/"+code+".png",alt:name,title:name,width:"24",style:"display:block;border-radius:2px;border:1px solid var(--line)"});
+  // لو الصورة ما انحمّلت، منعرض اسم الدولة بدلها
+  img.addEventListener("error",function(){if(img.parentNode)img.parentNode.replaceChild(document.createTextNode(name),img)});
+  return img;
+}
 function rDev(){
   var p=$("pDev");
   var keep=document.activeElement&&document.activeElement.id==="qBox";
@@ -276,7 +294,7 @@ function rDev(){
       tb.appendChild(h("tr",null,[
         h("td",{text:d.username||"-"}),
         h("td",{class:"mono",text:d.mac||"-"}),
-        h("td",{text:d.country_name||d.country||"-"}),
+        h("td",null,[flagEl(d)]),
         h("td",{text:d.app_version||"-"}),
         h("td",null,[h("span",{class:"dot"+(isOn(d)?" on":"")}),isOn(d)?"Online":ago(lastSeen(d))]),
         h("td",null,[sel]),
