@@ -308,6 +308,8 @@ function rDev(){
         h("td",null,[
           h("button",{class:"btn ghost",text:"Log",onclick:function(){showLog(d)}}),
           document.createTextNode(" "),
+          isOn(d)?h("button",{class:"btn ghost",text:"Kick",onclick:function(){kickDevice(d)}}):null,
+          isOn(d)?document.createTextNode(" "):null,
           h("button",{class:"btn",text:st.tab==="new"?"Make client":"Move to New",onclick:function(){setClient(d,st.tab==="new")}}),
           document.createTextNode(" "),
           h("button",{class:"btn ghost",text:"Delete",onclick:function(){delClient(d)}})
@@ -394,6 +396,13 @@ function cancelMac(mac){
 function setClient(d,v){
   api("/rest/v1/customers?username=eq."+encodeURIComponent(d.username),{method:"PATCH",body:{is_client:v},prefer:"return=representation"})
    .then(function(r){if(!r||!r.length)throw new Error("Not saved");st.cm[d.username]=v;toast(d.username+(v?" is now a client":" moved to New"));render()})
+   .catch(function(e){toast(e.message,true)});
+}
+// طرد: التطبيق عند العميل بيطلع لصفحة الدخول (خلال حوالي 30 ثانية). بس للأونلاين، والطلب بينتهي بعد دقيقتين
+function kickDevice(d){
+  if(!confirm("Kick "+(d.username||d.mac)+"?\n\nThe app on this device will sign out and go back to the login screen within about 30 seconds. They can sign in again."))return;
+  api("/rest/v1/rpc/kick_device",{method:"POST",body:{p_device_code:d.mac}})
+   .then(function(){toast("Kick sent to "+(d.username||d.mac)+". Signs out within ~30 seconds.")})
    .catch(function(e){toast(e.message,true)});
 }
 function delClient(d){
