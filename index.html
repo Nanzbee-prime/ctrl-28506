@@ -120,6 +120,7 @@ td select{padding:5px 8px;min-width:120px}
       <button class="btn ghost" id="bRef">Refresh</button>
     </div>
     <section id="pDash"></section>
+    <section id="pUpd" class="hidden"></section>
     <section id="pDev" class="hidden"></section>
     <section id="pDom" class="hidden"></section>
     <section id="pMac" class="hidden"></section>
@@ -191,8 +192,10 @@ function load(){
     api("/rest/v1/domains?select=*&order=id"),
     api("/rest/v1/customers?select=username,is_client"),
     api("/rest/v1/panel_presence?select=*").catch(function(){return []}),
-    st.page==="mac"?api("/rest/v1/rpc/list_pending",{method:"POST",body:{}}).catch(function(){return null}):Promise.resolve(null)
+    st.page==="mac"?api("/rest/v1/rpc/list_pending",{method:"POST",body:{}}).catch(function(){return null}):Promise.resolve(null),
+    st.page==="dash"?api("/rest/v1/rpc/app_latest",{method:"POST",body:{}}).catch(function(){return null}):Promise.resolve(null)
   ]).then(function(r){
+    if(r[5])st.upd=r[5];
     st.pr={};(r[3]||[]).forEach(function(x){st.pr[x.device_code]=x});
     if(r[4])st.pend=r[4];
     st.devices=r[0]||[];st.domains=r[1]||[];
@@ -230,11 +233,12 @@ function render(force){
   if(!force&&ae&&ae.tagName==="SELECT"&&ae.closest&&ae.closest("main"))return;
   $("pMac").classList.toggle("hidden",st.page!=="mac");
   $("pDash").classList.toggle("hidden",st.page!=="dash");
+  $("pUpd").classList.toggle("hidden",st.page!=="dash");
   $("pDev").classList.toggle("hidden",st.page!=="dev");
   $("pDom").classList.toggle("hidden",st.page!=="dom");
   $("title").textContent={dash:"Dashboard",dev:"Devices",dom:"Domains",mac:"Add by MAC"}[st.page];
   Array.prototype.forEach.call(document.querySelectorAll("nav button[data-p]"),function(b){b.classList.toggle("on",b.dataset.p===st.page)});
-  if(st.page==="dash")rDash();else if(st.page==="dev")rDev();else if(st.page==="dom")rDom();else rMac();
+  if(st.page==="dash"){rDash();rUpd()}else if(st.page==="dev")rDev();else if(st.page==="dom")rDom();else rMac();
 }
 function rDash(){
   var p=$("pDash");clear(p);
@@ -267,6 +271,36 @@ function watchEl(d){
   var x=st.pr[d.mac];
   var w=(isOn(d)&&x&&x.watching)?String(x.watching):"";
   return h("td",{title:w,style:"max-width:260px;overflow:hidden;text-overflow:ellipsis;color:"+(w?"var(--text)":"var(--mute)")},[w||"-"]);
+}
+/* ---------- إشعار تحديث التطبيق ---------- */
+function rUpd(){
+  var p=$("pUpd");
+  if(!p.firstChild){
+    p.appendChild(h("h3",{style:"margin:18px 0 8px;font-size:14px",text:"App update notice"}));
+    p.appendChild(h("form",{id:"uForm",class:"card",onsubmit:function(e){e.preventDefault();saveUpd()}},[
+      h("div",{class:"form"},[
+        h("div",null,[h("label",{text:"Latest version code (a number)"}),h("input",{id:"uCode",type:"number",min:"0",inputmode:"numeric",autocomplete:"off"})]),
+        h("div",null,[h("label",{text:"Version name"}),h("input",{id:"uName",placeholder:"2.5",autocomplete:"off"})]),
+        h("div",{class:"full"},[h("label",{text:"Instructions shown to clients"}),h("input",{id:"uNote",placeholder:"Open Downloader and enter the code ...",autocomplete:"off"})])]),
+      h("button",{class:"btn",type:"submit",id:"uBtn",text:"Save"}),
+      h("div",{id:"uHint",style:"color:var(--mute);font-size:12px;margin-top:10px"})]));
+  }
+  if(st.upd&&!st.updFilled){
+    $("uCode").value=st.upd.code||0;$("uName").value=st.upd.name||"";$("uNote").value=st.upd.note||"";
+    st.updFilled=true;
+  }
+  var mx=st.devices.reduce(function(m,d){return Math.max(m,d.app_code||0)},0);
+  $("uHint").textContent="Highest version code on devices now: "+mx+". Clients with a lower code see the notice once per version. Set the code to 0 to turn the notice off.";
+}
+function saveUpd(){
+  var code=parseInt($("uCode").value,10);
+  if(isNaN(code)||code<0){toast("Version code must be a number (0 or more)",true);return}
+  var name=$("uName").value.trim(),note=$("uNote").value.trim();
+  if(code>0&&!name){toast("Enter the version name (for example 2.5)",true);return}
+  $("uBtn").disabled=true;
+  api("/rest/v1/rpc/set_app_latest",{method:"POST",body:{p_code:code,p_name:name,p_note:note}})
+   .then(function(){st.upd={code:code,name:name,note:note};toast(code>0?"Saved. Clients with an older version will see the notice.":"Notice turned off")})
+   .catch(function(e){toast(e.message,true)}).then(function(){$("uBtn").disabled=false});
 }
 function rDev(){
   var p=$("pDev");
