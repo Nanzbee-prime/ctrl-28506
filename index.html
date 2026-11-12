@@ -456,11 +456,17 @@ function setDomain(d,val,sel){
    .then(function(){sel.disabled=false});
 }
 function rDom(){
-  var p=$("pDom");clear(p);
+  var p=$("pDom");
+  // الصفحة بتتحدّث كل 10 ثواني وبتعيد بناء هالنموذج: منحفظ اللي عم تكتبه ومكان المؤشر قبل ما نمسح
+  var oldIn=$("newUrl"),keep=oldIn?oldIn.value:"",hadFocus=!!oldIn&&document.activeElement===oldIn;
+  var selS=hadFocus?oldIn.selectionStart:0,selE=hadFocus?oldIn.selectionEnd:0;
+  clear(p);
   var hide=h("input",{type:"checkbox",onchange:function(e){st.hide=e.target.checked;LS.set("np_hide",st.hide?"1":"0");rDom()}});hide.checked=st.hide;
   var inp=h("input",{id:"newUrl",placeholder:"http://newdomain.com/"});
+  inp.value=keep;
   p.appendChild(h("div",{class:"row"},[inp,h("button",{class:"btn",text:"New",onclick:function(){addDomain(inp.value)}}),
     h("label",{class:"chk",style:"margin:0 0 0 auto"},[hide,"Hide links"])]));
+  if(hadFocus){inp.focus();try{inp.setSelectionRange(selS,selE)}catch(e){}}
   var tb=h("tbody");
   p.appendChild(h("div",{class:"tw"},[h("table",null,[
     h("thead",null,[h("tr",null,["#","URL","Default","Active",""].map(function(x){return h("th",{text:x})}))]),tb])]));
@@ -484,7 +490,7 @@ function addDomain(url){
   if(!/\/$/.test(url))url+="/";
   var id=st.domains.reduce(function(m,d){return Math.max(m,d.id)},0)+1;
   api("/rest/v1/domains",{method:"POST",body:{id:id,url:url,is_default:false,active:true}})
-   .then(function(){toast("Domain added");return load()}).catch(function(e){toast(e.message,true)});
+   .then(function(){var ni=$("newUrl");if(ni)ni.value="";toast("Domain added");return load()}).catch(function(e){toast(e.message,true)});
 }
 function toggleActive(x,box){
   var v=box.checked;
